@@ -1,88 +1,95 @@
 # chia-post
 
-Interactive visualization of Chia's **Proof of Space and Time** (PoST), built to
-be watched at toy scale (`k = 8`, tiny VDF iteration counts) so the entire
-consensus dance — timelord, full node, farmer — can run live in the browser.
+[![Live demo](https://img.shields.io/badge/▶%20live%20demo-chiaminejp.github.io%2Fchia--post-3fb950)](https://chiaminejp.github.io/chia-post/)
+[![Built with](https://img.shields.io/badge/React%20·%20TypeScript%20·%20Vite%20·%20Canvas%20·%20KaTeX-16271f)](#)
 
-## Status
+An interactive, **structure-faithful** visualization of Chia's **Proof of Space and Time** (PoST) — the
+timelord's three VDF chains, the farmer's proof of space, the block "lock", and transaction blocks — run at a
+tiny **k = 8** toy scale so the *entire* consensus dance fits on screen and runs live in the browser.
 
-- **Milestone 1 ✅ — Timelord, the three VDF chains.** Challenge Chain (CC),
-  Infused Challenge Chain (ICC), Reward Chain (RC) advancing on one VDF axis,
-  with 64 signage points per sub-slot, real infusion points, the exact deficit
-  rules, and ICC activation/closure. Scrubbable Canvas timeline.
-- Milestone 2 — Farmer winning a block (plot filter → quality → required_iters → signing).
-- Milestone 3 — `k=8` Hellman/"Beyond Hellman" plot tables + quality lookup.
-- Milestone 4 — The puzzle/lock (nested PoS → plot signature → foliage signature).
-- Milestone 5 — Transaction blocks and dual-rail chaining.
+**▶ [Open the live demo](https://chiaminejp.github.io/chia-post/)**
+
+The trick is the scale: at k=8 a plot is 7 tables of ~256 entries (drawable), a sub-slot is a few hundred VDF
+squarings (steppable), and a proof is 64 leaves you can walk one match at a time. The *structure and formulas*
+are the real Chia ones; only the magnitudes are shrunk.
+
+## What you can explore
+
+It's all driven by one scrubbable timeline, with deep-dive modals reachable from the controls:
+
+- **Timeline** — the three chains (Challenge / Infused Challenge / Reward) advancing as binary-quadratic-form
+  VDFs, with signage points, infusion points, the deficit/ICC lifecycle, challenge folding, transaction-block
+  rails, and a live "Now / Next slot change" readout.
+- **⏱ Proof of Time** — step the sequential class-group squarings `g → g² → … → g^(2^T)`, watch the form
+  `(a,b,c)` change while `b² − 4ac = Δ` stays invariant, and see the O(1) n-wesolowski check.
+- **🔍 Plot scan** — every plot at a signage point: the plot-filter leading-zero bits vs the threshold, and the
+  `required_iters` meter showing which quality is small enough to win.
+- **🌳 Plot** — the whole 7-table forest the proof lives in, in bucketed strips; hover a bucket to see its
+  matches; the winning proof path is lit up. Keys → `plot_id` → F1 seeds it all.
+- **🧬 Proof of space** — the 64-leaf proof tree, steppable table-by-table, match-by-match, and down to the
+  inner m-search of a single match; plus the cheap verification recipe and the memory⇄time tradeoff.
+- **🔒 Puzzle** — how a block is locked by nested plot-key / pool-key signatures, with a **tamper** toggle that
+  breaks the foliage signature when you rewrite the reward address.
+- **💸 Transaction blocks** — the two rails (`prev_block_hash` for every block, `prev_transaction_block_hash`
+  for the sparse tx chain), the `is_transaction_block` rule, and reward settlement.
+- **📖 Textbook** — the concepts and a "Key formulas" reference, all typeset with KaTeX.
+
+## How faithful is it?
+
+Faithful in **structure and formulas**, scaled in **magnitude**, ported from the real Chia sources:
+
+- **VDF (Time)** — a real **class-group VDF**: repeated squaring of binary quadratic forms with a discriminant
+  derived from the challenge (no trusted setup), certified by an **n-wesolowski** proof. Ported from
+  [`chiavdf`](https://github.com/Chia-Network/chiavdf) (`nucomp.h`, `vdf_new.h`, `create_discriminant.h`).
+- **Proof of space** — the real **chiapos 7-table forward propagation**: F1, the adjacent-bucket matching with
+  the `(2m+parity)²` quadratic, Fx, the 64-leaf proof and quality. Ported in shape from
+  [`chiapos`](https://github.com/Chia-Network/chiapos). Constants are decoupled/shrunk so the forest is healthy
+  at k=8 (the real `kBC=15113`, `kExtraBits=6` need k≥18 — which is exactly why chiapos can't plot k=8).
+- **Signatures** — real **BLS12-381** (`@noble/curves`) for plot, farmer, and pool keys.
+- **Consensus rules** — iteration math, the deficit/ICC rules, and `is_transaction_block` are ported from
+  [`chia-blockchain`](https://github.com/Chia-Network/chia-blockchain) (`pot_iterations.py`, `deficit.py`,
+  `prev_transaction_block.py`, `block_creation.py`).
+
+Stand-ins, clearly labeled in the UI: ChaCha8/BLAKE3 → SHA-256 for F1/Fx, and the plotting "phases"
+(sort/compress) are not modeled — it's the forward-propagation forest, not a real plot file.
 
 ## Architecture
 
-Deterministic, headless **simulation core** (pure TS, seeded) emits a typed
-event stream that a **React + Canvas** renderer scrubs over. Cryptographic
-**primitives sit behind interfaces** so faithful/Wasm implementations can drop in
-without touching the sim or UI.
+A deterministic, **seeded, headless simulation core** emits a typed event stream that a React + Canvas UI
+scrubs over. Cryptographic primitives sit behind interfaces.
 
 ```
 src/
-  sim/        headless, deterministic, seeded — the brain
-    constants.ts   toy k=8 consensus constants (mainnet values quoted)
-    iterations.ts  required_iters / sp_iters / ip_iters — port of pot_iterations.py
-    timelord.ts    3-chain state machine; calculateDeficit() ports deficit.py
-    blockSource.ts seeded stand-in for the farmer/PoSpace layer (milestone 2 replaces)
-    events.ts      typed event stream the UI consumes
-  crypto/     real primitives behind interfaces
-    classgroup.ts  binary quadratic form class group (ported from chiavdf)
-    wesolowski.ts  single + n-wesolowski VDF proofs and verification
-    vdf.ts         ClassGroupVdf wrapping the above behind the Vdf interface
-    hash.ts        SHA-256 helpers (std_hash equivalent)
-    rng.ts         splitmix64 seeded PRNG
-  ui/         React + Canvas
-    TimelineCanvas.tsx   the 3-chain spine
-    Inspector.tsx        per-event detail panel
+  sim/          headless, deterministic, seeded — the brain
+    constants.ts     toy k=8 consensus constants (mainnet values quoted)
+    iterations.ts    required_iters / sp_iters / ip_iters  (pot_iterations.py)
+    timelord.ts      forward pass: 3 chains, deficit/ICC, tx rule  (timelord.py + deficit.py)
+    plot.ts          BLS plot keys, plot_id, the plot filter
+    proofofspace.ts  the chiapos-style 7-table forest, proof + quality
+    farmer.ts        real proof-of-space block production
+    events.ts        the typed event stream the UI consumes
+  crypto/       real primitives behind interfaces
+    classgroup.ts    binary quadratic form class group (chiavdf)
+    wesolowski.ts    single + n-wesolowski VDF proofs
+    vdf.ts / bls.ts / hash.ts / rng.ts
+  ui/           React + Canvas + KaTeX
+    TimelineCanvas, Inspector, and the modals above, Math (KaTeX), Textbook
 ```
 
-### The VDF — real class group + n-wesolowski
+The core is covered by **40 tests** (group axioms, proof round-trips, deficit transitions, the farmer pipeline).
 
-The "Time" in PoST is a VDF: `y = g^(2^T)` in a group of **unknown order**, which
-forces `T` sequential squarings. This project runs the **actual** construction
-Chia uses: repeated squaring of **binary quadratic forms in the class group of an
-imaginary quadratic field**, with the discriminant derived from each chain's
-challenge (`create_discriminant`) so there is **no trusted setup**. Correctness of
-every sub-slot is certified with a real **n-wesolowski** proof (`π^l · g^r == y`).
-
-- `crypto/classgroup.ts` — forms, reduction, NUDUPL (square), NUCOMP (multiply),
-  `create_discriminant`/`HashPrime`, ported from `chiavdf` (`src/nucomp.h`,
-  `src/vdf_new.h`, `src/create_discriminant.h`). The classical "fast path" only —
-  the `xgcd_partial` slow path is a large-integer optimization that yields
-  identical results, so it is omitted.
-- `crypto/wesolowski.ts` — single + segmented ("n-wesolowski") prove/verify.
-- Tests assert the group axioms (identity, inverse, associativity, commutativity,
-  discriminant invariance) and that proofs verify while tampering is rejected.
-
-Toy scaling: a 64-bit discriminant and `SUB_SLOT_ITERS = 4096` keep it
-responsive; mainnet uses a 1024-bit discriminant and 2²⁷ iters. The `Vdf`
-interface is the seam — `chiavdf` compiled to Wasm could drop in for byte-level
-serialization fidelity.
-
-### Why TypeScript, not Rust/Wasm
-
-At `k=8` with scaled-down iteration counts the computation is light enough that
-the real class-group VDF runs fine on the main thread, so Wasm buys little for
-performance. It is worth reaching for later only for *fidelity* (real
-`chiapos`/`chiavdf`/BLS byte formats) — and `chiapos` can't even do `k=8`, so the
-plot tables must be a faithful toy reimplementation regardless.
-
-## Grounding
-
-Mechanics are ported from `chia-blockchain`:
-`chia/consensus/pot_iterations.py`, `deficit.py`, `default_constants.py`,
-`block_creation.py`, and `chia/timelord/`.
-
-## Run
+## Run locally
 
 ```bash
-npm install          # if Socket CLI blocks esbuild's CVE: prefix SOCKET_CLI_ACCEPT_RISKS=1
-npm run dev          # dev server
-npm test             # sim-core tests (iteration math, deficit, timelord trace)
-npm run build        # typecheck + production build
+npm install
+npm run dev      # dev server
+npm test         # sim-core tests (vitest)
+npm run build    # typecheck + production build
 ```
+
+Deployed to GitHub Pages from `main` via `.github/workflows/deploy.yml`.
+
+---
+
+Built as a learning tool; not affiliated with the Chia Network. Mechanics cross-checked against the upstream
+`chia-blockchain`, `chiavdf`, and `chiapos` repositories.
