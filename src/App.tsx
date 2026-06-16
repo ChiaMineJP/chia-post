@@ -19,6 +19,7 @@ import { LockModal } from "./ui/LockModal.tsx";
 import { TxModal } from "./ui/TxModal.tsx";
 import { VdfModal } from "./ui/VdfModal.tsx";
 import { InfusionModal } from "./ui/InfusionModal.tsx";
+import { MonitorView } from "./monitor/MonitorView.tsx";
 import { farmerColor } from "./ui/colors.ts";
 
 const NUM_SUB_SLOTS = 4;
@@ -53,6 +54,7 @@ export function App() {
   const [showLock, setShowLock] = useState(false);
   const [showTx, setShowTx] = useState(false);
   const [showInfusion, setShowInfusion] = useState(false);
+  const [view, setView] = useState<"mini" | "monitor">("mini");
 
   // Guided story (dedicated sequence-diagram walkthrough), reusing the modals.
   const story = useMemo(() => buildStory(trace, TOY_CONSTANTS), [trace]);
@@ -369,19 +371,33 @@ export function App() {
     <>
       <div className="topbar">
         <h1><span>chia-post</span> · Proof of Space <i style={{ color: "var(--muted)" }}>and</i> Time</h1>
-        <span className="chip">k = {TOY_CONSTANTS.K} · toy scale</span>
-        <span className="sub hide-narrow">real class-group VDFs · BLS-signed blocks · live timelord ↔ farmer loop</span>
+        <div className="mode-switch">
+          <button className={view === "mini" ? "active" : ""} onClick={() => setView("mini")}>Mini PoST</button>
+          <button className={view === "monitor" ? "active" : ""} onClick={() => setView("monitor")}>Mainnet Monitor</button>
+        </div>
+        {view === "mini" && <span className="chip">k = {TOY_CONSTANTS.K} · toy scale</span>}
+        <span className="sub hide-narrow">
+          {view === "mini"
+            ? "real class-group VDFs · BLS-signed blocks · live timelord ↔ farmer loop"
+            : "live signage points & blocks · watch your farm’s near-misses, pachinko-style"}
+        </span>
         <span style={{ flex: 1 }} />
-        <label className="seed">
-          <span className="sub">seed</span>
-          <input
-            type="number"
-            value={seed}
-            onChange={(e) => setSeed(Number(e.target.value) || 0)}
-          />
-        </label>
+        {view === "mini" && (
+          <label className="seed">
+            <span className="sub">seed</span>
+            <input
+              type="number"
+              value={seed}
+              onChange={(e) => setSeed(Number(e.target.value) || 0)}
+            />
+          </label>
+        )}
       </div>
 
+      {view === "monitor" && <MonitorView />}
+
+      {view === "mini" && (
+       <>
       <div className="main">
         <div className="canvas-host">
           <TimelineCanvas
@@ -485,6 +501,8 @@ export function App() {
         />
       )}
       {showBook && <Textbook onClose={() => setShowBook(false)} />}
+       </>
+      )}
     </>
   );
 }
