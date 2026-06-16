@@ -57,6 +57,14 @@ export function VdfModal({ challengeHex, onClose }: { challengeHex: string; onCl
           The timelord computes <Tex expr={"y = g^{\\,2^{T}}"} /> by <b>T sequential squarings</b>. Each step needs the
           previous one — you cannot parallelize or skip ahead, so finishing <i>proves</i> that time elapsed.
         </p>
+        <p className="help" style={{ marginTop: 6 }}>
+          There is no separate scalar <Tex expr={"y"} />. The group is the <b>class group</b> of discriminant <Tex expr={"\\Delta"} />,
+          and every element <i>is</i> a <b>reduced binary quadratic form</b> <Tex expr={"f(x,y)=ax^2+bxy+cy^2"} /> — just the
+          triple <Tex expr={"(a,b,c)"} />. So the running value <Tex expr={"y_i"} /> and the coefficients <Tex expr={"a,b,c"} /> shown
+          below are the <i>same object</i>: <Tex expr={"y_i=(a,b,c)"} />. A “squaring” means <b>compose the form with itself, then
+          reduce</b> to the unique small representative — that reduction keeps <Tex expr={"a,b,c"} /> from blowing up while the
+          discriminant <Tex expr={"b^2-4ac=\\Delta"} /> never changes, which is exactly what proves you stayed in the group.
+        </p>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, color: "var(--muted)", margin: "4px 0 10px" }}>
           <span>challenge <code>{challengeHex.slice(0, 14)}…</code></span>
@@ -73,13 +81,16 @@ export function VdfModal({ challengeHex, onClose }: { challengeHex: string; onCl
             </div>
             <Tex expr={i === 0 ? "y_0 = g" : `y_{${i}} = y_{${i - 1}}^{2} = g^{\\,2^{${i}}}`} />
           </div>
-          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 13, marginTop: 8, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+            <Tex expr={`y_{${i}}`} /> <i>is</i> this reduced form <Tex expr={"(a,b,c)"} />:
+          </div>
+          <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 13, marginTop: 4, lineHeight: 1.7 }}>
             <div><span style={{ color: "var(--muted)" }}>a =</span> <b style={{ color: "var(--cc)" }}>{f.a.toString()}</b></div>
             <div><span style={{ color: "var(--muted)" }}>b =</span> <b style={{ color: "var(--cc)" }}>{f.b.toString()}</b></div>
             <div><span style={{ color: "var(--muted)" }}>c =</span> <b style={{ color: "var(--cc)" }}>{short(f.c, 40)}</b></div>
           </div>
           <div style={{ marginTop: 8, color: disc === data.D ? "#3fb950" : "#ff7b72" }}>
-            <Tex expr={"b^2 - 4ac = \\Delta"} /> <span style={{ fontSize: 12 }}>— stays a reduced form in the class group {disc === data.D ? "✓" : "✗"}</span>
+            <Tex expr={"b^2 - 4ac = \\Delta"} /> <span style={{ fontSize: 12 }}>— so <Tex expr={`y_{${i}}`} /> is still a valid reduced element of the same class group {disc === data.D ? "✓" : "✗"}</span>
           </div>
         </div>
 

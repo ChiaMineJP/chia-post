@@ -194,6 +194,59 @@ const TOPICS: Topic[] = [
     ),
   },
   {
+    title: "BLS12-381 — the curve",
+    body: (
+      <>
+        <p>Every key and signature in Chia — and in this app (real <code>@noble/curves</code>) — lives on <b>BLS12-381</b>, a <b>pairing-friendly</b> elliptic curve. “Pairing-friendly” is the whole point: it carries an efficient <b>bilinear map</b>, and that map is what makes signature <i>aggregation</i> possible.</p>
+
+        <h3 style={{ color: "var(--cc)", fontSize: 13, margin: "10px 0 0" }}>How it's built</h3>
+        <p>It is a Barreto–Lynn–Scott construction with <b>embedding degree 12</b>, generated from a single low-weight integer seed <Tex expr={"z = \\texttt{-0xd201000000010000}"} /> (low Hamming weight → fast field arithmetic). Everything else is a polynomial in <Tex expr={"z"} />:</p>
+        <F label="base field prime p (381 bits)" expr={"p = \\tfrac{1}{3}(z-1)^2\\,(z^4 - z^2 + 1) + z"} />
+        <F label="subgroup / scalar order r (255-bit prime) — the order of G1, G2, GT" expr={"r = z^4 - z^2 + 1"} />
+        <F label="the curve, over the base field" expr={"E/\\mathbb{F}_p:\\; y^2 = x^3 + 4"} />
+
+        <h3 style={{ color: "var(--cc)", fontSize: 13, margin: "14px 0 0" }}>Three groups + a pairing</h3>
+        <Table
+          head={["Group", "Lives in", "In Chia"]}
+          rows={[
+            [<b style={{ color: "var(--cc)" }}>G1</b>, <>order-<code>r</code> subgroup of <Tex expr={"E(\\mathbb{F}_p)"} /></>, <><b>public keys</b> — compress to <b>48 bytes</b></>],
+            [<b style={{ color: "var(--rc)" }}>G2</b>, <>subgroup of <Tex expr={"E'(\\mathbb{F}_{p^2})"} /> (a twist)</>, <><b>signatures</b> — compress to <b>96 bytes</b></>],
+            [<b style={{ color: "var(--icc)" }}>GT</b>, <>order-<code>r</code> subgroup of <Tex expr={"\\mathbb{F}_{p^{12}}^{*}"} /></>, "the pairing's target — never serialized"],
+          ]}
+        />
+        <F label="the bilinear pairing (non-degenerate)" expr={"e:\\; G_1 \\times G_2 \\to G_T, \\qquad e(aP,\\,bQ) = e(P,Q)^{ab}"} />
+        <p>That one identity — sliding scalars in and out of both arguments — is what every BLS trick rests on. The 381-bit field is sized so the discrete log in <Tex expr={"\\mathbb{F}_{p^{12}}"} /> still costs ≈ <b>128-bit</b> security.</p>
+        <p>Public keys sit in the <i>smaller</i> group G1 (the “min-pubkey” variant), and messages are hashed <i>into</i> G2 with SHA-256 + SSWU (the IETF hash-to-curve) — so a signature is a single G2 point.</p>
+      </>
+    ),
+  },
+  {
+    title: "BLS signatures",
+    body: (
+      <>
+        <p>A BLS signature is one curve point. The whole scheme is scalar multiplication on the two sides of the pairing:</p>
+        <F label="key — secret scalar, public point in G1" expr={"\\mathrm{sk}\\in[1,r),\\qquad \\mathrm{pk} = \\mathrm{sk}\\cdot g_1"} />
+        <F label="sign — scale the message's G2 point by the secret" expr={"\\sigma = \\mathrm{sk}\\cdot H(m)\\in G_2"} />
+        <F label="verify — one pairing equation" expr={"e(g_1,\\;\\sigma) \\;=\\; e(\\mathrm{pk},\\;H(m))"} />
+        <p>It checks out by bilinearity: <Tex expr={"e(g_1,\\, \\mathrm{sk}\\cdot H(m)) = e(\\mathrm{sk}\\cdot g_1,\\, H(m)) = e(\\mathrm{pk},\\, H(m))"} />. No per-signature randomness is involved — signatures are <b>deterministic</b>, so there is no ECDSA-style nonce-reuse footgun.</p>
+
+        <h3 style={{ color: "var(--cc)", fontSize: 13, margin: "12px 0 0" }}>What that buys you</h3>
+        <Table
+          head={["Capability", "How / why"]}
+          rows={[
+            [<b>Aggregation</b>, <>signatures and keys are points, so they <b>add</b>: <Tex expr={"\\sigma_{\\text{agg}}=\\textstyle\\sum_i \\sigma_i,\\; \\mathrm{pk}_{\\text{agg}}=\\sum_i \\mathrm{pk}_i"} />. One point verifies <i>many</i> signers — a whole block (and far beyond) checks in O(1).</>],
+            [<b>Rogue-key safety</b>, <>naive sums are forgeable with a crafted “rogue” key. Chia signs the <b>augmented</b> message <Tex expr={"H(\\mathrm{pk}\\,\\Vert\\,m)"} />, binding each signer to its own key — no proof-of-possession round needed.</>],
+            [<b>HD derivation</b>, <>EIP-2333: a master key from a 24-word seed, child keys by index → all of a wallet's farmer / pool / spend keys come deterministically from one seed.</>],
+            [<><b>Hardened</b> children</>, <>derived <i>from the parent secret</i>; the child pubkey can <b>not</b> be recomputed from the parent pubkey. A leaked child secret can't expose its siblings or parent — the price is no watch-only.</>],
+            [<><b>Unhardened</b> children</>, <>derived with point arithmetic, so the child <b>pubkey</b> follows from the parent <b>pubkey</b> alone. A cold / observer wallet can mint an endless tree of receive keys with no secret present (caveat: parent pub + one child secret recovers the parent secret).</>],
+            [<>Synthetic / <b>taproot</b> keys</>, <>a coin can lock to <Tex expr={"\\mathrm{pk}_{\\text{syn}} = \\mathrm{pk} + H(\\mathrm{pk}\\,\\Vert\\,\\text{hidden})\\cdot g_1"} />, hiding an alternate spend path while the owner still signs with the matching <Tex expr={"\\mathrm{sk}_{\\text{syn}}"} />.</>],
+          ]}
+        />
+        <p>In this app the <b>plot key</b> is exactly such an aggregate: <Tex expr={"\\mathrm{plot\\_pk} = \\mathrm{local\\_pk} + \\mathrm{farmer\\_pk}"} /> (the ⊕ in <b>🔒 puzzle</b>). The harvester and farmer each sign with their half; the halves <i>add</i> into one signature that verifies against <code>plot_pk</code>. The pool key signs the pool target separately. All of it is real BLS12-381 from <code>@noble/curves</code>.</p>
+      </>
+    ),
+  },
+  {
     title: "The three chains",
     body: (
       <Table

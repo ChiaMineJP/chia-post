@@ -5,6 +5,7 @@ import { generatePlots } from "./sim/plot.ts";
 import { Farmer } from "./sim/farmer.ts";
 import { runTimelord } from "./sim/timelord.ts";
 import { verifyProof, findProofs, proofPathIndices } from "./sim/proofofspace.ts";
+import { buildStory, type InspectKind } from "./sim/story.ts";
 import type { TimelordEvent } from "./sim/events.ts";
 import { hexToBytes, toHex } from "./crypto/hash.ts";
 import { TimelineCanvas } from "./ui/TimelineCanvas.tsx";
@@ -12,10 +13,12 @@ import { Inspector } from "./ui/Inspector.tsx";
 import { Textbook } from "./ui/Textbook.tsx";
 import { PlotScanModal } from "./ui/PlotScanModal.tsx";
 import { ProofModal } from "./ui/ProofModal.tsx";
+import { StoryView } from "./ui/StoryView.tsx";
 import { PlotModal } from "./ui/PlotModal.tsx";
 import { LockModal } from "./ui/LockModal.tsx";
 import { TxModal } from "./ui/TxModal.tsx";
 import { VdfModal } from "./ui/VdfModal.tsx";
+import { InfusionModal } from "./ui/InfusionModal.tsx";
 import { farmerColor } from "./ui/colors.ts";
 
 const NUM_SUB_SLOTS = 4;
@@ -49,6 +52,48 @@ export function App() {
   const [showPlot, setShowPlot] = useState(false);
   const [showLock, setShowLock] = useState(false);
   const [showTx, setShowTx] = useState(false);
+  const [showInfusion, setShowInfusion] = useState(false);
+
+  // Guided story (dedicated sequence-diagram walkthrough), reusing the modals.
+  const story = useMemo(() => buildStory(trace, TOY_CONSTANTS), [trace]);
+  const [showStory, setShowStory] = useState(false);
+  const [storyIndex, setStoryIndex] = useState(0);
+  const [storyPlaying, setStoryPlaying] = useState(false);
+  const infusionByHeight = useMemo(() => {
+    const m = new Map<number, Extract<TimelordEvent, { kind: "infusion" }>>();
+    for (const e of trace.events) if (e.kind === "infusion") m.set(e.blockHeight, e);
+    return m;
+  }, [trace]);
+  const storyFocus = (iter: number, h: number | null) => {
+    setPlayhead(iter);
+    setSelected(h === null ? null : infusionByHeight.get(h) ?? null);
+  };
+  const storyInspect = (kind: InspectKind, h: number | null) => {
+    if (h !== null) setSelected(infusionByHeight.get(h) ?? null);
+    if (kind === "scan") setShowScan(true);
+    else if (kind === "proof") setShowProof(true);
+    else if (kind === "lock") setShowLock(true);
+    else if (kind === "tx") setShowTx(true);
+    else if (kind === "vdf") setShowVdf(true);
+    else if (kind === "plot") setShowPlot(true);
+    else if (kind === "infusion") setShowInfusion(true);
+  };
+
+  // The infused block for the infusion modal: the selected block, else nearest.
+  const infusionData = useMemo(() => {
+    if (!showInfusion) return null;
+    let block: Extract<TimelordEvent, { kind: "infusion" }> | null =
+      selected?.kind === "infusion" ? selected : null;
+    if (!block) {
+      let bd = Infinity;
+      for (const e of trace.events) {
+        if (e.kind !== "infusion") continue;
+        const d = Math.abs(e.totalIters - playhead);
+        if (d < bd) { bd = d; block = e; }
+      }
+    }
+    return block;
+  }, [showInfusion, selected, playhead, trace]);
 
   // Transaction-block rails: all blocks + the focused block's tx-rule values.
   const txData = useMemo(() => {
@@ -324,15 +369,17 @@ export function App() {
     <>
       <div className="topbar">
         <h1><span>chia-post</span> · Proof of Space <i style={{ color: "var(--muted)" }}>and</i> Time</h1>
-        <span className="sub">Milestone 1 — timelord · three class-group VDF chains · n-wesolowski proofs (k={TOY_CONSTANTS.K})</span>
+        <span className="chip">k = {TOY_CONSTANTS.K} · toy scale</span>
+        <span className="sub hide-narrow">real class-group VDFs · BLS-signed blocks · live timelord ↔ farmer loop</span>
         <span style={{ flex: 1 }} />
-        <span className="sub">seed</span>
-        <input
-          type="number"
-          value={seed}
-          onChange={(e) => setSeed(Number(e.target.value) || 0)}
-          style={{ width: 70, background: "var(--panel-2)", color: "var(--text)", border: "1px solid var(--line)", borderRadius: 4, padding: "3px 6px", font: "inherit" }}
-        />
+        <label className="seed">
+          <span className="sub">seed</span>
+          <input
+            type="number"
+            value={seed}
+            onChange={(e) => setSeed(Number(e.target.value) || 0)}
+          />
+        </label>
       </div>
 
       <div className="main">
@@ -358,13 +405,6 @@ export function App() {
           <button onClick={() => setShowDeps((d) => !d)} style={showDeps ? { borderColor: "var(--cc)" } : undefined}>
             {showDeps ? "↳ deps on" : "↳ deps off"}
           </button>
-          <button onClick={() => setShowVdf(true)}>⏱ proof of time</button>
-          <button onClick={() => setShowScan(true)}>🔍 plot scan</button>
-          <button onClick={() => setShowProof(true)}>🧬 proof of space</button>
-          <button onClick={() => setShowPlot(true)}>🌳 plot</button>
-          <button onClick={() => setShowLock(true)}>🔒 puzzle</button>
-          <button onClick={() => setShowTx(true)}>💸 tx blocks</button>
-          <button onClick={() => setShowBook(true)}>📖 textbook</button>
           <input
             type="range"
             min={0}
@@ -387,6 +427,23 @@ export function App() {
             deficit <b>{currentDeficit}</b> · blocks <b>{blocksSoFar}</b>
           </span>
         </div>
+        <div className="toolbar">
+          <button className="story" onClick={() => { setStoryIndex(0); setStoryPlaying(false); setShowStory(true); }}>🎬 story</button>
+          <span className="divider" />
+          <span className="group-label">time</span>
+          <button onClick={() => setShowVdf(true)}>⏱ proof of time</button>
+          <span className="divider" />
+          <span className="group-label">space</span>
+          <button onClick={() => setShowScan(true)}>🔍 plot scan</button>
+          <button onClick={() => setShowPlot(true)}>🌳 plot</button>
+          <button onClick={() => setShowProof(true)}>🧬 proof of space</button>
+          <span className="divider" />
+          <span className="group-label">block</span>
+          <button onClick={() => setShowLock(true)}>🔒 puzzle</button>
+          <button onClick={() => setShowTx(true)}>💸 tx blocks</button>
+          <span className="spacer" />
+          <button onClick={() => setShowBook(true)}>📖 textbook</button>
+        </div>
       </div>
       <Inspector event={selected} now={now} />
       {showScan && scanData && (
@@ -406,6 +463,26 @@ export function App() {
       )}
       {showTx && txData && (
         <TxModal blocks={txData.blocks} focus={txData.focus} onClose={() => setShowTx(false)} />
+      )}
+      {showInfusion && infusionData && (
+        <InfusionModal
+          block={infusionData}
+          intervalIters={trace.spIntervalIters}
+          minBlocksPerChallenge={Number(TOY_CONSTANTS.MIN_BLOCKS_PER_CHALLENGE_BLOCK)}
+          onClose={() => setShowInfusion(false)}
+        />
+      )}
+      {showStory && (
+        <StoryView
+          steps={story}
+          index={Math.min(storyIndex, story.length - 1)}
+          setIndex={setStoryIndex}
+          playing={storyPlaying}
+          setPlaying={setStoryPlaying}
+          onFocus={storyFocus}
+          onInspect={storyInspect}
+          onClose={() => { setStoryPlaying(false); setShowStory(false); }}
+        />
       )}
       {showBook && <Textbook onClose={() => setShowBook(false)} />}
     </>
