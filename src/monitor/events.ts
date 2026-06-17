@@ -50,6 +50,8 @@ export interface PlotAttempt {
   /** cleared the plot filter (leading zero bits ≥ threshold)? */
   passed: boolean;
   filterBits: number;
+  /** short hex of the plot-filter hash H(plot_id ‖ challenge ‖ sp). */
+  filterHex?: string;
   /** passed the filter AND a matching table-7 entry exists (a proof was found).
    *  Many filter-passers have no T7 match → the lookup stops at the top table. */
   hasProof: boolean;
@@ -59,6 +61,19 @@ export interface PlotAttempt {
   /** requiredIters / sp_interval_iters — < 1 means it won the window. */
   windowFraction: number | null;
   win: boolean;
+  /** real proof-of-space internals for the lookup card (sim only). */
+  proof?: {
+    /** how many table-7 entries matched the challenge. */
+    t7Matches: number;
+    /** the 64 leaf x-values. */
+    xs: number[];
+    /** the two leaves (xs[i], xs[i+1]) that form the quality. */
+    qualityIndex: number;
+    qualityStrHex: string;
+    valid: boolean;
+    /** one matched pair, with the (2m+parity)² quadratic re-derived. */
+    sampleMatch?: { yL: number; yR: number; bucket: number; bL: number; cL: number; parity: number; m: number; sq: number; bcR: number };
+  };
 }
 
 /**

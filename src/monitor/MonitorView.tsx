@@ -5,14 +5,12 @@ import type {
   FeedHandlers,
   FeedStatus,
   MonitorFeed,
-  PlotAttempt,
   SignagePointEvent,
   StateEvent,
 } from "./events.ts";
 import { DEFAULT_SIM, SimFeed } from "./simFeed.ts";
 import { WsFeed } from "./wsFeed.ts";
-import { PosLottery } from "./PosLottery.tsx";
-import { Tex } from "../ui/Math.tsx";
+import { PosMachine } from "./PosMachine.tsx";
 
 const SP_PER_SUB_SLOT = 64;
 
@@ -100,14 +98,6 @@ export function MonitorView() {
   }, [speed]);
 
   const totalPlots = farm.last?.totalPlots ?? DEFAULT_SIM.farmPlots;
-  const roundBest: PlotAttempt | null = (() => {
-    const att = farm.last?.attempts;
-    if (!att) return null;
-    let b: PlotAttempt | null = null;
-    for (const a of att)
-      if (a.passed && a.windowFraction != null && (b === null || a.windowFraction < b.windowFraction!)) b = a;
-    return b;
-  })();
 
   return (
     <div className="monitor">
@@ -152,44 +142,16 @@ export function MonitorView() {
       </div>
 
       <div className="mon-panel farm-panel">
-        <h3>Your farm <span>{totalPlots} k=8 plots · filter → lookup tree → required_iters window</span></h3>
-        <div className="farm-body">
-          <div className="pachinko-wrap">
-            <PosLottery round={farm.last} />
-          </div>
-          <div className="farm-side">
-            <div className={`farm-jackpot ${farm.last?.proofs ? "on" : ""}`}>
-              {farm.last?.proofs ? `🏆 ${farm.last.proofs} winning proof${farm.last.proofs > 1 ? "s" : ""}!` : "survivors dive the tables; quality lands on the window line…"}
-            </div>
-            <div className="farm-numbers">
-              <div className="fn-row"><span>challenge</span><code>{farm.last?.challengeHex ?? "…"}</code></div>
-              <div className="fn-row">
-                <span>plot filter</span>
-                <b>{farm.last?.passed ?? 0}</b>&nbsp;/&nbsp;{totalPlots} survived&nbsp;
-                <span className="fn-dim">(≥ {farm.last?.filterThreshold ?? "—"} leading zero bits)</span>
-              </div>
-              <div className="fn-row">
-                <span>best this round</span>
-                {roundBest && roundBest.requiredIters != null ? (
-                  <>
-                    r&nbsp;=&nbsp;<b>{roundBest.requiredIters}</b>&nbsp;·&nbsp;{roundBest.windowFraction!.toFixed(2)}× window&nbsp;·&nbsp;
-                    {roundBest.win ? <b style={{ color: "var(--cc)" }}>WIN</b> : <span className="fn-dim">missed</span>}
-                  </>
-                ) : (
-                  <span className="fn-dim">no plot cleared the filter</span>
-                )}
-              </div>
-              <div className="fn-formula">
-                <Tex expr={`r=\\left\\lfloor\\dfrac{\\Delta\\cdot 2^{20}\\cdot H(q\\,\\Vert\\,sp)}{2^{256}\\,S_k}\\right\\rfloor,\\quad \\text{win}\\iff r<${farm.last?.interval ?? "?"}`} />
-              </div>
-            </div>
-            <div className="farm-stats">
-              <span>rounds <b>{farm.rounds}</b></span>
-              <span>passed <b>{farm.passed}</b></span>
-              <span>wins <b>{farm.proofs}</b></span>
-              <span>best <b>{farm.bestFraction != null ? `${farm.bestFraction.toFixed(2)}×` : "—"}</b></span>
-            </div>
-          </div>
+        <h3>Your farm <span>{totalPlots} k=8 plots · the proof-of-space function chain</span></h3>
+        <div className={`farm-jackpot ${farm.last?.proofs ? "on" : ""}`}>
+          {farm.last?.proofs ? `🏆 ${farm.last.proofs} winning proof${farm.last.proofs > 1 ? "s" : ""}!` : "watch the challenge flow through the real function chain…"}
+        </div>
+        <PosMachine round={farm.last} />
+        <div className="farm-stats">
+          <span>rounds <b>{farm.rounds}</b></span>
+          <span>passed <b>{farm.passed}</b></span>
+          <span>wins <b>{farm.proofs}</b></span>
+          <span>best <b>{farm.bestFraction != null ? `${farm.bestFraction.toFixed(2)}×` : "—"}</b></span>
         </div>
       </div>
 
