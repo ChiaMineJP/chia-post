@@ -10,7 +10,10 @@ import type {
 } from "./events.ts";
 import { DEFAULT_SIM, SimFeed } from "./simFeed.ts";
 import { WsFeed } from "./wsFeed.ts";
+import { CoinsetFeed } from "./coinsetFeed.ts";
 import { PosMachine } from "./PosMachine.tsx";
+
+type Source = "sim" | "coinset" | "ws";
 
 const SP_PER_SUB_SLOT = 64;
 
@@ -23,7 +26,7 @@ interface Toast {
 }
 
 export function MonitorView() {
-  const [source, setSource] = useState<"sim" | "ws">("sim");
+  const [source, setSource] = useState<Source>("sim");
   const [wsUrl, setWsUrl] = useState("ws://localhost:8788/feed");
   const [status, setStatus] = useState<FeedStatus>("connecting");
   const [statusDetail, setStatusDetail] = useState<string | undefined>();
@@ -46,8 +49,8 @@ export function MonitorView() {
   }, []);
 
   useEffect(() => {
-    const feed: MonitorFeed = source === "sim" ? new SimFeed() : new WsFeed(wsUrl);
-    if (feed instanceof SimFeed) feed.speed = speedRef.current;
+    const feed: MonitorFeed = source === "sim" ? new SimFeed() : source === "coinset" ? new CoinsetFeed() : new WsFeed(wsUrl);
+    if (feed instanceof SimFeed || feed instanceof CoinsetFeed) feed.speed = speedRef.current;
     feedRef.current = feed;
 
     const handlers: FeedHandlers = {
@@ -94,7 +97,7 @@ export function MonitorView() {
 
   useEffect(() => {
     const f = feedRef.current;
-    if (f instanceof SimFeed) f.speed = speed;
+    if (f instanceof SimFeed || f instanceof CoinsetFeed) f.speed = speed;
   }, [speed]);
 
   const totalPlots = farm.last?.totalPlots ?? DEFAULT_SIM.farmPlots;
@@ -110,19 +113,19 @@ export function MonitorView() {
         <span className="mon-stat">netspace <b>{chain ? `${chain.netspaceEiB} EiB` : "—"}</b></span>
         <span className="mon-stat">difficulty <b>{chain ? chain.difficulty.toLocaleString() : "—"}</b></span>
         <span className="mon-spacer" />
-        {source === "sim" ? (
-          <>
-            <label className="mon-speed">speed ×{speed}
-              <input type="range" min={1} max={16} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
-            </label>
-            <button className="mon-conn-btn" onClick={() => setSource("ws")}>connect node…</button>
-          </>
-        ) : (
-          <>
-            <input className="mon-url" value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} spellCheck={false} />
-            <button className="mon-conn-btn" onClick={() => setSource("sim")}>use sim</button>
-          </>
+        {source !== "ws" && (
+          <label className="mon-speed">farm ×{speed}
+            <input type="range" min={1} max={16} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+          </label>
         )}
+        {source === "ws" && (
+          <input className="mon-url" value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} spellCheck={false} />
+        )}
+        <div className="mon-src">
+          <button className={source === "sim" ? "active" : ""} onClick={() => setSource("sim")}>Simulated</button>
+          <button className={source === "coinset" ? "active" : ""} onClick={() => setSource("coinset")}>Public node</button>
+          <button className={source === "ws" ? "active" : ""} onClick={() => setSource("ws")}>My node</button>
+        </div>
       </div>
 
       <div className="mon-panel sp-strip">
@@ -142,7 +145,7 @@ export function MonitorView() {
       </div>
 
       <div className="mon-panel farm-panel">
-        <h3>Your farm <span>{totalPlots} k=8 plots · the proof-of-space function chain</span></h3>
+        <h3>Your farm <span>{totalPlots} k=8 plots · the proof-of-space function chain{source === "coinset" ? " · demo (a public node has no farm)" : ""}</span></h3>
         <div className={`farm-jackpot ${farm.last?.proofs ? "on" : ""}`}>
           {farm.last?.proofs ? `🏆 ${farm.last.proofs} winning proof${farm.last.proofs > 1 ? "s" : ""}!` : "watch the challenge flow through the real function chain…"}
         </div>
@@ -168,11 +171,11 @@ export function MonitorView() {
               <span className="blk-h">#{b.height.toLocaleString()}</span>
               <span className="blk-sp">sp {b.spIndex}</span>
               <span className="blk-bar">
-                {known && <span className="blk-fill" style={{ width: `${Math.max(2, pct)}%`, background: close ? "var(--win)" : "var(--cc)" }} />}
+                {known && <span className="blk-fill" style={{ width: `${Math.min(100, Math.max(2, pct))}%`, background: close ? "var(--win)" : "var(--cc)" }} />}
               </span>
               <span className="blk-pct" style={close ? { color: "var(--win)" } : undefined}>{known ? `${pct}%` : "—"}</span>
               <span className="blk-badges">
-                <span className="blk-k">k{b.kSize}</span>
+                {b.kSize != null && <span className="blk-k">k{b.kSize}</span>}
                 {b.isTransactionBlock && <span className="blk-tx">tx</span>}
                 {b.overflow && <span className="blk-of">of</span>}
               </span>

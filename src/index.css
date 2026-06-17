@@ -331,6 +331,11 @@ canvas { display: block; width: 100%; height: 100%; }
 .mon-url { width: 230px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; font: inherit; font-size: 12px; }
 .mon-conn-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px; }
 .mon-conn-btn:hover { border-color: var(--cc); }
+.mon-src { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.mon-src button { background: transparent; color: var(--muted); border: none; border-left: 1px solid var(--line); padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+.mon-src button:first-child { border-left: none; }
+.mon-src button:hover { color: var(--text); }
+.mon-src button.active { background: var(--cc); color: #07140c; font-weight: 600; }
 
 .mon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 760px) { .mon-grid { grid-template-columns: 1fr; } }
