@@ -32,6 +32,7 @@ import json
 import logging
 import secrets
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 from aiohttp import ClientSession, WSMsgType, web
@@ -58,6 +59,9 @@ class Hub:
     def __init__(self) -> None:
         self.clients: set[web.WebSocketResponse] = set()
         self.last_state: Optional[dict] = None
+        # sp_hash -> ts(ms) of an enriched (per-plot) farming_info we already sent,
+        # so the plain aggregate event for the same signage point doesn't double-emit.
+        self.enriched_sp: dict[str, int] = {}
 
     async def add(self, ws: web.WebSocketResponse) -> None:
         self.clients.add(ws)
@@ -190,17 +194,126 @@ async def handle_daemon_message(hub: Hub, payload: dict) -> None:
         })
     elif cmd == "new_farming_info":
         fi = data.get("farming_info", data) or {}
+        sp_hash = short(fi.get("signage_point") or fi.get("sp_hash"))
+        # if a per-plot (enriched) event already covered this signage point, skip
+        ts = hub.enriched_sp.get(sp_hash)
+        if ts is not None and now_ms() - ts < 10_000:
+            return
         lookup = float(fi.get("lookup_time", 0) or 0)
         await hub.broadcast({
             "type": "farming_info",
             "challenge": short(fi.get("challenge_hash")),
-            "spHash": short(fi.get("signage_point") or fi.get("sp_hash")),
+            "spHash": sp_hash,
             "passed": int(fi.get("passed_filter", fi.get("passed", 0)) or 0),
             "proofs": int(fi.get("proofs", 0) or 0),
             "totalPlots": int(fi.get("total_plots", 0) or 0),
             "lookupMs": round(lookup / 1000.0, 1),  # FarmingInfo.lookup_time is microseconds
             "ts": now_ms(),
         })
+    elif cmd == "near_miss_info":
+        # per-plot near-miss detail (Tier B). Produced by an optional harvester
+        # patch — see companion/harvester-nearmiss.md. Supersedes the aggregate.
+        await emit_enriched_farming_info(hub, data)
+
+
+def _prune_enriched(hub: Hub) -> None:
+    cutoff = now_ms() - 30_000
+    for k in [k for k, v in hub.enriched_sp.items() if v < cutoff]:
+        hub.enriched_sp.pop(k, None)
+
+
+async def emit_enriched_farming_info(hub: Hub, data: dict) -> None:
+    """Translate a per-plot near-miss record into a farming_info with `attempts`.
+
+    Expected `data` (see companion/harvester-nearmiss.md):
+      {challenge_hash, sp_hash, signage_point_index, total_plots,
+       sub_slot_iters | sp_interval_iters, filter_threshold, lookup_ms,
+       plots: [{plot_index?, passed, has_proof, required_iters?, filter_bits?, quality?}]}
+    """
+    plots = data.get("plots", []) or []
+    interval = int(data.get("sp_interval_iters") or 0)
+    if not interval:
+        ssi = int(data.get("sub_slot_iters", 0) or 0)
+        interval = ssi // 64 if ssi else 0
+
+    attempts = []
+    passed = 0
+    proofs = 0
+    for i, p in enumerate(plots):
+        is_pass = bool(p.get("passed", True))
+        req = p.get("required_iters")
+        req = int(req) if req is not None else None
+        has_proof = bool(p.get("has_proof", req is not None))
+        win = bool(has_proof and interval and req is not None and req < interval)
+        frac = (req / interval) if (req is not None and interval) else None
+        if is_pass:
+            passed += 1
+        if win:
+            proofs += 1
+        attempts.append({
+            "plotIndex": int(p.get("plot_index", i)),
+            "passed": is_pass,
+            "filterBits": int(p.get("filter_bits", 0) or 0),
+            "hasProof": has_proof,
+            "qualityHex": short(p.get("quality"), 8),
+            "requiredIters": req,
+            "windowFraction": frac,
+            "win": win,
+        })
+
+    sp_hash = short(data.get("sp_hash"))
+    challenge = short(data.get("challenge_hash"))
+    hub.enriched_sp[sp_hash] = now_ms()
+    _prune_enriched(hub)
+    await hub.broadcast({
+        "type": "farming_info",
+        "challenge": challenge,
+        "spHash": sp_hash,
+        "passed": passed,
+        "proofs": proofs,
+        "totalPlots": int(data.get("total_plots", len(plots)) or len(plots)),
+        "lookupMs": round(float(data.get("lookup_ms", 0) or 0), 1),
+        "challengeHex": challenge,
+        "spIndex": int(data.get("signage_point_index", 0) or 0),
+        "interval": interval,
+        "filterThreshold": int(data.get("filter_threshold", 0) or 0),
+        "attempts": attempts,
+        "ts": now_ms(),
+    })
+
+
+async def nearmiss_file_task(hub: Hub, path: str, stop: asyncio.Event) -> None:
+    """Tail a JSONL file of near-miss records (one per signage point).
+
+    This is the least-invasive Tier-B producer: the optional harvester patch just
+    appends one JSON object per line; we translate each into a farming_info with
+    per-plot attempts. Handles the file not existing yet and truncation/rotation.
+    """
+    log.info("tailing near-miss file: %s", path)
+    pos = 0
+    while not stop.is_set():
+        try:
+            p = Path(path)
+            if p.exists():
+                size = p.stat().st_size
+                if size < pos:
+                    pos = 0  # truncated / rotated
+                if size > pos:
+                    with open(p, "r") as f:
+                        f.seek(pos)
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                obj = json.loads(line)
+                            except Exception:
+                                continue
+                            await emit_enriched_farming_info(hub, obj)
+                        pos = f.tell()
+        except Exception as e:
+            log.warning("near-miss file error: %s", e)
+        await asyncio.sleep(0.5)
 
 
 async def rpc_poll_task(hub: Hub, root, config, stop: asyncio.Event) -> None:
@@ -318,6 +431,9 @@ async def main_async(args: argparse.Namespace) -> None:
         log.info("chia root: %s", root)
         tasks.append(asyncio.create_task(daemon_ws_task(hub, root, config, stop)))
         tasks.append(asyncio.create_task(rpc_poll_task(hub, root, config, stop)))
+    # Tier-B per-plot near-misses via a tailed JSONL file (optional, any mode)
+    if args.nearmiss_file:
+        tasks.append(asyncio.create_task(nearmiss_file_task(hub, args.nearmiss_file, stop)))
 
     try:
         await stop.wait()
@@ -332,6 +448,8 @@ def main() -> None:
     p.add_argument("--host", default="127.0.0.1", help="bind address for the feed server (default 127.0.0.1)")
     p.add_argument("--port", type=int, default=8788, help="feed server port (default 8788)")
     p.add_argument("--mock", action="store_true", help="emit synthetic events; do not connect to a node")
+    p.add_argument("--nearmiss-file", default=None,
+                   help="tail a JSONL file of per-plot near-miss records (Tier B); see harvester-nearmiss.md")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

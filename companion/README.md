@@ -24,9 +24,21 @@ only real.
 - **blocks** — height, signage-point index, k-size, tx/overflow, from the RPC.
 - **chain state** — height, difficulty, sub-slot iters, netspace, synced.
 
-Not yet included (needs a harvester patch — "Tier B"): the *per-plot*
-`required_iters` for losing plots, which would light up the pipeline's
-window-line in live mode exactly as the simulator does.
+### Tier B — per-plot near-misses (optional)
+
+The companion can also consume **per-plot** `required_iters` (losers and
+filter-passers with no proof), which lights up the Monitor's window-line in live
+mode exactly like the simulator. It accepts this two ways:
+
+```bash
+# tail a JSONL file your (optional) harvester patch appends to:
+python chia_post_companion.py --nearmiss-file ~/.chia/mainnet/near_miss.jsonl
+```
+
+…or a `near_miss_info` daemon event. Producing the data needs a small, opt-in
+patch to your harvester — see **[harvester-nearmiss.md](harvester-nearmiss.md)**
+for the record contract and an illustrative diff. Nothing here is required and
+no patched code ships; the companion just *accepts* the data when present.
 
 ## Run it
 
