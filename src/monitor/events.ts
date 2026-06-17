@@ -94,12 +94,13 @@ export interface BlockEvent {
   isTransactionBlock: boolean;
   overflow: boolean;
   kSize: number;
-  requiredIters: number;
-  spIntervalIters: number;
   /** requiredIters / spIntervalIters ∈ (0,1): how deep into the window it landed.
-   *  small = won comfortably; near 1 = a nail-biter near-miss that just made it. */
-  windowFraction: number;
-  qualityHex: string;
+   *  small = won comfortably; near 1 = a nail-biter near-miss that just made it.
+   *  Optional: a live node doesn't cheaply expose a block's required_iters. */
+  windowFraction?: number;
+  requiredIters?: number;
+  spIntervalIters?: number;
+  qualityHex?: string;
   ts: number;
 }
 

@@ -1,0 +1,5 @@
+# The companion reuses the chia-blockchain libraries that are already installed
+# on the node host, so run it inside the same virtualenv as your chia node.
+# aiohttp ships as a chia dependency; it is listed here only for standalone /
+# --mock use outside the chia venv.
+aiohttp>=3.9

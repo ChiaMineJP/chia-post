@@ -76,13 +76,14 @@ export function MonitorView() {
             addToast({ kind: "pass", icon: "🎯", title: `${e.passed} plot${e.passed > 1 ? "s" : ""} cleared the filter`, sub: "your farm · this round" });
         } else if (e.type === "block") {
           setBlocks((prev) => [e, ...prev].slice(0, 24));
-          const pct = Math.round(e.windowFraction * 100);
-          const close = e.windowFraction > 0.85;
+          const wf = e.windowFraction;
+          const close = wf != null && wf > 0.85;
+          const depth = wf != null ? `landed at ${Math.round(wf * 100)}% of the window` : `sp ${e.spIndex}`;
           addToast({
             kind: close ? "close" : "block",
             icon: close ? "😅" : "⛏",
             title: `Block #${e.height.toLocaleString()} won`,
-            sub: `landed at ${pct}% of the window${e.isTransactionBlock ? " · tx" : ""}${close ? " — nail-biter!" : ""}`,
+            sub: `${depth}${e.isTransactionBlock ? " · tx" : ""}${close ? " — nail-biter!" : ""}`,
           });
         }
       },
@@ -196,16 +197,18 @@ export function MonitorView() {
         <h3>Blocks won <span>network-wide · bar = how deep into the signage-point window the winner landed</span></h3>
         {blocks.length === 0 && <div className="farm-idle" style={{ padding: "12px 0" }}>waiting for the next block…</div>}
         {blocks.map((b) => {
-          const pct = Math.round(b.windowFraction * 100);
-          const close = b.windowFraction > 0.85;
+          const wf = b.windowFraction;
+          const known = wf != null;
+          const pct = known ? Math.round(wf * 100) : 0;
+          const close = known && wf > 0.85;
           return (
             <div className="blk-row" key={`${b.height}-${b.headerHash}`}>
               <span className="blk-h">#{b.height.toLocaleString()}</span>
               <span className="blk-sp">sp {b.spIndex}</span>
               <span className="blk-bar">
-                <span className="blk-fill" style={{ width: `${Math.max(2, pct)}%`, background: close ? "var(--win)" : "var(--cc)" }} />
+                {known && <span className="blk-fill" style={{ width: `${Math.max(2, pct)}%`, background: close ? "var(--win)" : "var(--cc)" }} />}
               </span>
-              <span className="blk-pct" style={close ? { color: "var(--win)" } : undefined}>{pct}%</span>
+              <span className="blk-pct" style={close ? { color: "var(--win)" } : undefined}>{known ? `${pct}%` : "—"}</span>
               <span className="blk-badges">
                 <span className="blk-k">k{b.kSize}</span>
                 {b.isTransactionBlock && <span className="blk-tx">tx</span>}
