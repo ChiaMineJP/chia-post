@@ -19,7 +19,7 @@ import { LockModal } from "./ui/LockModal.tsx";
 import { TxModal } from "./ui/TxModal.tsx";
 import { VdfModal } from "./ui/VdfModal.tsx";
 import { InfusionModal } from "./ui/InfusionModal.tsx";
-import { MonitorView } from "./monitor/MonitorView.tsx";
+import { LabView } from "./lab/LabView.tsx";
 import { farmerColor } from "./ui/colors.ts";
 
 const NUM_SUB_SLOTS = 4;
@@ -54,7 +54,7 @@ export function App() {
   const [showLock, setShowLock] = useState(false);
   const [showTx, setShowTx] = useState(false);
   const [showInfusion, setShowInfusion] = useState(false);
-  const [view, setView] = useState<"mini" | "monitor">("mini");
+  const [view, setView] = useState<"mini" | "lab">("mini");
 
   // Guided story (dedicated sequence-diagram walkthrough), reusing the modals.
   const story = useMemo(() => buildStory(trace, TOY_CONSTANTS), [trace]);
@@ -373,13 +373,13 @@ export function App() {
         <h1><span>chia-post</span> · Proof of Space <i style={{ color: "var(--muted)" }}>and</i> Time</h1>
         <div className="mode-switch">
           <button className={view === "mini" ? "active" : ""} onClick={() => setView("mini")}>Mini PoST</button>
-          <button className={view === "monitor" ? "active" : ""} onClick={() => setView("monitor")}>Mainnet Monitor</button>
+          <button className={view === "lab" ? "active" : ""} onClick={() => setView("lab")}>PoST Lab</button>
         </div>
         {view === "mini" && <span className="chip">k = {TOY_CONSTANTS.K} · toy scale</span>}
         <span className="sub hide-narrow">
           {view === "mini"
             ? "real class-group VDFs · BLS-signed blocks · live timelord ↔ farmer loop"
-            : "live signage points & blocks · watch your farm’s near-misses, pachinko-style"}
+            : "one signage point, step by step — VDF, the 7-table proof, required_iters, and BLS signing in full"}
         </span>
         <span style={{ flex: 1 }} />
         {view === "mini" && (
@@ -394,7 +394,7 @@ export function App() {
         )}
       </div>
 
-      {view === "monitor" && <MonitorView />}
+      {view === "lab" && <LabView />}
 
       {view === "mini" && (
        <>
